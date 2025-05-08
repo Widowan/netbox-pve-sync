@@ -50,6 +50,7 @@ it's obtained via `ip route get 8.8.8.8` command (with ipv6 equivalent), hence w
     PVE_TOKEN_VALUE="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
     NB_HOST="https://mynetbox.example.com"
     NB_TOKEN="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    # This is the type in netbox that indicates proxmox nodes
     HYPERVISOR_DEVICE_TYPE="proxmox-ve"
     ```
 3. Run it in any way you like:
