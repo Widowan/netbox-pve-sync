@@ -48,8 +48,8 @@ it's obtained via `ip route get 8.8.8.8` command (with ipv6 equivalent), hence w
     PVE_USER="netbox@pve"
     PVE_TOKEN_NAME="netbox"
     PVE_TOKEN_VALUE="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
-    NB_HOST="https://mynetbox.example.com"
-    NB_TOKEN="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    NETBOX_HOST="https://mynetbox.example.com"
+    NETBOX_TOKEN="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
     # This is the type in netbox that indicates proxmox nodes
     HYPERVISOR_DEVICE_TYPE="proxmox-ve"
     ```

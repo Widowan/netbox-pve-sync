@@ -11,7 +11,7 @@ from pynetbox.models.virtualization import VirtualMachines as NetboxVM
 import pve
 from pve import ProxmoxVM, Disk as ProxmoxDisk, Interface as ProxmoxInterface
 
-NB_HOST = os.environ["NB_HOST"]
+NB_HOST = os.environ["NETBOX_HOST"]
 NB_TOKEN = os.environ["NETBOX_TOKEN"]
 HYPERVISOR_DEVICE_TYPE = os.environ.get("HYPERVISOR_DEVICE_TYPE", "proxmox-ve")
 
