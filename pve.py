@@ -12,6 +12,7 @@ PVE_PORT = os.environ["PVE_PORT"]
 PVE_USER = os.environ["PVE_USER"]
 PVE_TOKEN_NAME = os.environ["PVE_TOKEN_NAME"]
 PVE_TOKEN_VALUE = os.environ["PVE_TOKEN_VALUE"]
+PVE_VERIFY_SSL = bool(os.environ.get("PVE_VERIFY_SSL", "false"))
 
 
 def __get_proxmox_api():
@@ -21,6 +22,7 @@ def __get_proxmox_api():
         user=PVE_USER,
         token_name=PVE_TOKEN_NAME,
         token_value=PVE_TOKEN_VALUE,
+        verify_ssl=PVE_VERIFY_SSL,
     )
 
 
