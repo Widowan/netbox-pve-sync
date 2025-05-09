@@ -12,4 +12,4 @@ PVE_TOKEN_NAME = os.environ["PVE_TOKEN_NAME"]
 PVE_TOKEN_VALUE = os.environ["PVE_TOKEN_VALUE"]
 PVE_VERIFY_SSL = bool(os.environ.get("PVE_VERIFY_SSL", "false"))
 
-INTERFACES_BLACKLIST = ['docker', 'veth.*', 'vnet.*', 'virbr.*', 'br-.*', 'usb.*', 'lo']
+INTERFACES_BLACKLIST = ['docker.*', 'veth.*', 'vnet.*', 'virbr.*', 'br-.*', 'usb.*', 'lo']
