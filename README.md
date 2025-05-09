@@ -29,7 +29,7 @@ This script will sync VMs from all of your proxmox nodes to Netbox.
 #### Rationale about qemu guest agent:
 
 It is impossible to reliably extract primary IP address from a machine with just interfaces (`guest-network-get-interfaces` command on QGA).
-Same goes for the routing table, but we cannot obtain it anyways as the QGA's `guest-network-get-route` command is unsupported as of writing.
+Same goes for the routing table, but we cannot obtain it anyway as the QGA's `guest-network-get-route` command is unsupported as of writing.
 So, instead of trying to parse it manually (and failing miserably), I decided to just ask kernel what's the primary IP is:
 it's obtained via `ip route get 8.8.8.8` command (with ipv6 equivalent), hence why you need to have `exec` and `exec-status` command enabled in QGA settings.
 
@@ -73,7 +73,7 @@ it's obtained via `ip route get 8.8.8.8` command (with ipv6 equivalent), hence w
    Wants=network-online.target
 
    [Service]
-   Restart=always
+   Restart=on-failure
    Type=simple
    EnvironmentFile=/opt/netbox-pve-sync/.env
    ExecStart=/opt/netbox-pve-sync/venv/bin/python3 /opt/netbox-pve-sync/main.py

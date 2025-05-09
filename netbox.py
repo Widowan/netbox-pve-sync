@@ -26,7 +26,6 @@ def upsert_pairs(
         netbox_data_function: Callable[[U], Dict],
         api: NetboxEndpoint,
 ) -> List[Tuple[T, U]]:
-    result = []
     entity_pairs = full_outer_join(netbox_entities, proxmox_entities, match_function)
 
     def process_pair(netbox_entity: T, proxmox_entity: U) -> Tuple[T, U]:
@@ -94,7 +93,10 @@ def sync_interfaces(api: NetboxAPI, vm_pair_list: List[Tuple[NetboxVM, ProxmoxVM
         )
 
         for netbox_interface, proxmox_interface in interface_pairs:
-            all_proxmox_ips = proxmox_interface.ipv4_addresses + proxmox_interface.ipv6_addresses
+            if proxmox_interface:
+                all_proxmox_ips = proxmox_interface.ipv4_addresses + proxmox_interface.ipv6_addresses
+            else:
+                all_proxmox_ips = []
             netbox_ips: NetboxRecordSet = api.ipam.ip_addresses.filter(
                 address=all_proxmox_ips, custom_fields=EXTERNAL)
             ip_pairs: List[Tuple[NetboxRecord, str]] = upsert_pairs(
