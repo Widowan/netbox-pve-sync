@@ -1,83 +1,91 @@
-from concurrent.futures import ThreadPoolExecutor
-from typing import *
+from typing import TypeVar, Iterable, Callable, List, Tuple, Dict
 
 from pynetbox.core.api import Api as NetboxAPI
-from pynetbox.core.response import Record
+from pynetbox.core.endpoint import Endpoint as NetboxEndpoint
+from pynetbox.core.response import Record as NetboxRecord, RecordSet as NetboxRecordSet
 from pynetbox.models.virtualization import VirtualMachines as NetboxVM
 
 import config
-import utils.common
-import utils.netbox
-from models.pve import ProxmoxVM, PveDisk, PveInterface as ProxmoxInterface
+from utils.netbox import prepare_interface_data, prepare_ip_data, prepare_vm_data, prepare_disk_data
+from models.pve import ProxmoxVM
+from utils.common import full_outer_join
 
+T = TypeVar('T')
+U = TypeVar('U')
 
-def populate_vms(api: NetboxAPI, pve_vms: List[ProxmoxVM], pve_nodes: List[str]) -> List[Tuple[NetboxVM, ProxmoxVM]]:
-    netbox_hypervisors = [api.dcim.devices.get(name=i, type=config.HYPERVISOR_DEVICE_TYPE) for i in pve_nodes]
+def upsert_pairs(
+        netbox_entities: Iterable[T],
+        proxmox_entities: Iterable[U],
+        match_function: Callable[[T, U], bool],
+        netbox_data_function: Callable[[U], Dict],
+        api: NetboxEndpoint,
+) -> List[Tuple[T, U]]:
+    result = []
+    entity_pairs = full_outer_join(netbox_entities, proxmox_entities, match_function)
 
-    for hypervisor in netbox_hypervisors:
-        vms = api.virtualization.virtual_machines.filter(device_id=hypervisor.id)
-        vm_zip: List[Tuple[NetboxVM | None, ProxmoxVM | None]] = utils.common.full_outer_join(vms, pve_vms,
-                                                                                              lambda x, y: x.serial == y.uuid)
+    for netbox_entity, proxmox_entity in entity_pairs:
+        if proxmox_entity is None:
+            netbox_entity.delete()
 
-        def _process_single_pair(netbox_vm, proxmox_vm) -> Tuple[NetboxVM, ProxmoxVM] | None:
-            if proxmox_vm is None:
-                netbox_vm.delete()
-                return None
-            vm_data = utils.netbox.prepare_vm_data(proxmox_vm, hypervisor)
-            if netbox_vm is None:
-                netbox_vm = api.virtualization.virtual_machines.create(**vm_data)
-            else:
-                netbox_vm.update(vm_data)
-            return netbox_vm, proxmox_vm
+        netbox_entity_data = netbox_data_function(proxmox_entity)
 
-        with ThreadPoolExecutor() as executor:
-            result = list(executor.map(lambda x: _process_single_pair(x[0], x[1]), vm_zip))
+        if netbox_entity is None:
+            netbox_entity = api.create(**netbox_entity_data)
+        else:
+            netbox_entity.update(netbox_entity_data)
+
+        result.append((netbox_entity, proxmox_entity))
     return result
 
 
-def populate_disks(api: NetboxAPI, vm_pair_list: List[Tuple[NetboxVM, ProxmoxVM]]):
+def sync_vms(api: NetboxAPI, pve_vms: List[ProxmoxVM], pve_nodes: List[str]) -> List[Tuple[NetboxVM, ProxmoxVM]]:
+    result = []
+    netbox_hypervisors = [api.dcim.devices.get(name=i, type=config.HYPERVISOR_DEVICE_TYPE) for i in pve_nodes]
+
+    for hypervisor in netbox_hypervisors:
+        netbox_vms: Iterable[NetboxVM] = api.virtualization.virtual_machines.filter(device_id=hypervisor.id)
+        pairs = upsert_pairs(
+            netbox_entities=netbox_vms,
+            proxmox_entities=pve_vms,
+            match_function=lambda x, y: x.serial == y.uuid,
+            netbox_data_function=lambda y: prepare_vm_data(hypervisor, y),
+            api=api.virtualization.virtual_machines
+        )
+        result.extend(pairs)
+
+    return result
+
+
+def sync_disks(api: NetboxAPI, vm_pair_list: List[Tuple[NetboxVM, ProxmoxVM]]):
     for netbox_vm, proxmox_vm in vm_pair_list:
-        netbox_disks = list(api.virtualization.virtual_disks.filter(virtual_machine_id=netbox_vm.id))
-        proxmox_disks = proxmox_vm.disks
-        disk_zip: List[Tuple[Record | None, PveDisk | None]] = utils.common.full_outer_join(netbox_disks, proxmox_disks,
-                                                                                            lambda x, y: x.name == y.id)
-        for netbox_disk, proxmox_disk in disk_zip:
-            if proxmox_disk is None:
-                netbox_disk.delete()
-                continue
-
-            disk_data = utils.netbox.prepare_disk_data(proxmox_disk, netbox_vm)
-
-            if netbox_disk is None:
-                api.virtualization.virtual_disks.create(**disk_data)
-                continue
-
-            netbox_disk.update(disk_data)
+        netbox_disks: Iterable[NetboxRecord] = api.virtualization.virtual_disks.filter(virtual_machine_id=netbox_vm.id)
+        upsert_pairs(
+            netbox_entities=netbox_disks,
+            proxmox_entities=proxmox_vm.disks,
+            match_function=lambda x, y: x.name == y.id,
+            netbox_data_function=lambda y: prepare_disk_data(netbox_vm, y),
+            api=api.virtualization.virtual_disks
+        )
 
 
-def populate_interfaces(api: NetboxAPI, vm_pair_list: List[Tuple[NetboxVM, ProxmoxVM]]):
+def sync_interfaces(api: NetboxAPI, vm_pair_list: List[Tuple[NetboxVM, ProxmoxVM]]):
     for netbox_vm, proxmox_vm in vm_pair_list:
-        netbox_ifaces = list(api.virtualization.interfaces.filter(virtual_machine_id=netbox_vm.id))
-        proxmox_ifaces = proxmox_vm.interfaces
-        iface_zip: List[Tuple[Record | None, ProxmoxInterface | None]] = utils.common.full_outer_join(netbox_ifaces, proxmox_ifaces,
-                                                                                                      lambda x, y: x.name == y.name)
-        for netbox_iface, proxmox_iface in iface_zip:
-            if proxmox_iface is None:
-                netbox_iface.delete()
-                continue
+        netbox_interfaces: Iterable[NetboxRecord] = api.virtualization.interfaces.filter(virtual_machine_id=netbox_vm.id)
+        interface_pairs = upsert_pairs(
+            netbox_entities=netbox_interfaces,
+            proxmox_entities=proxmox_vm.interfaces,
+            match_function=lambda x, y: x.name == y.name,
+            netbox_data_function=lambda y: prepare_interface_data(netbox_vm, y),
+            api=api.virtualization.interfaces
+        )
 
-            interface_data = utils.netbox.prepare_interface_data(proxmox_iface, netbox_vm)
-
-            if netbox_iface is None:
-                netbox_iface = api.virtualization.interfaces.create(**interface_data)
-            else:
-                netbox_iface.update(interface_data)
-
-            for proxmox_ip in proxmox_iface.ipv4_addresses + proxmox_iface.ipv6_addresses:
-                netbox_ip = api.ipam.ip_addresses.get(address=proxmox_ip)
-                ip_data = utils.netbox.prepare_ip_data(proxmox_ip, netbox_iface)
-
-                if not netbox_ip:
-                    api.ipam.ip_addresses.create(**ip_data)
-                else:
-                    netbox_ip.update(ip_data)
+        for netbox_interface, proxmox_interface in interface_pairs:
+            all_proxmox_ips = proxmox_interface.ipv4_addresses + proxmox_interface.ipv6_addresses
+            netbox_ips: NetboxRecordSet = api.ipam.ip_addresses.filter(address=all_proxmox_ips)
+            upsert_pairs(
+                netbox_entities=netbox_ips,
+                proxmox_entities=all_proxmox_ips,
+                match_function=lambda x, y: x.address == y,
+                netbox_data_function=lambda y: prepare_ip_data(netbox_interface, y),
+                api=api.ipam.ip_addresses
+            )

@@ -1,13 +1,17 @@
 from typing import Dict, Any
 
+import pynetbox
+from pynetbox.core.api import Api as NetboxAPI
+
 from pynetbox.core.response import Record
 from pynetbox.models.dcim import Devices as NetboxDevice
 from pynetbox.models.virtualization import VirtualMachines as NetboxVM
 
+import config
 from models.pve import ProxmoxVM, PveDisk, PveInterface as ProxmoxInterface
 
 
-def prepare_vm_data(pve_vm: ProxmoxVM, hypervisor: NetboxDevice):
+def prepare_vm_data(hypervisor: NetboxDevice, pve_vm: ProxmoxVM):
     return {
         'name': pve_vm.name,
         'status': 'active',
@@ -23,7 +27,7 @@ def prepare_vm_data(pve_vm: ProxmoxVM, hypervisor: NetboxDevice):
     }
 
 
-def prepare_disk_data(proxmox_disk: PveDisk, netbox_vm: NetboxVM) -> Dict[str, Any]:
+def prepare_disk_data(netbox_vm: NetboxVM, proxmox_disk: PveDisk) -> Dict[str, Any]:
     return {
         'virtual_machine': netbox_vm.id,
         'name': proxmox_disk.id,
@@ -31,7 +35,7 @@ def prepare_disk_data(proxmox_disk: PveDisk, netbox_vm: NetboxVM) -> Dict[str, A
     }
 
 
-def prepare_interface_data(proxmox_iface: ProxmoxInterface, netbox_vm: NetboxVM):
+def prepare_interface_data(netbox_vm: NetboxVM, proxmox_iface: ProxmoxInterface):
     return {
         'virtual_machine': netbox_vm.id,
         'name': proxmox_iface.name,
@@ -40,10 +44,14 @@ def prepare_interface_data(proxmox_iface: ProxmoxInterface, netbox_vm: NetboxVM)
     }
 
 
-def prepare_ip_data(proxmox_ip: str, netbox_iface: Record):
+def prepare_ip_data(netbox_iface: Record, proxmox_ip: str):
     return {
         'address': proxmox_ip,
         'assigned_object_type': 'virtualization.vminterface',
         'assigned_object_id': netbox_iface.id,
         'status': 'active'
     }
+
+
+def get_netbox_api() -> NetboxAPI:
+    return pynetbox.api(url=config.NB_HOST, token=config.NB_TOKEN)
