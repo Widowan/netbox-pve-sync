@@ -6,7 +6,8 @@ from pynetbox.core.response import Record as NetboxRecord, RecordSet as NetboxRe
 from pynetbox.models.virtualization import VirtualMachines as NetboxVM
 
 import config
-from utils.netbox import prepare_interface_data, prepare_ip_data, prepare_vm_data, prepare_disk_data
+from utils.netbox import prepare_interface_data, prepare_ip_data, prepare_vm_data, prepare_disk_data, \
+    prepare_primary_ip_patch
 from models.pve import ProxmoxVM
 from utils.common import full_outer_join
 
@@ -82,10 +83,20 @@ def sync_interfaces(api: NetboxAPI, vm_pair_list: List[Tuple[NetboxVM, ProxmoxVM
         for netbox_interface, proxmox_interface in interface_pairs:
             all_proxmox_ips = proxmox_interface.ipv4_addresses + proxmox_interface.ipv6_addresses
             netbox_ips: NetboxRecordSet = api.ipam.ip_addresses.filter(address=all_proxmox_ips)
-            upsert_pairs(
+            ip_pairs: List[Tuple[NetboxRecord, str]] = upsert_pairs(
                 netbox_entities=netbox_ips,
                 proxmox_entities=all_proxmox_ips,
                 match_function=lambda x, y: x.address == y,
                 netbox_data_function=lambda y: prepare_ip_data(netbox_interface, y),
-                api=api.ipam.ip_addresses
+                api=api.ipam.ip_addresses,
             )
+
+            primary_ipv4, primary_ipv6 = None, None
+            for netbox_ip, proxmox_ip in ip_pairs:
+                if proxmox_ip == proxmox_vm.ipv4:
+                    primary_ipv4 = netbox_ip
+                elif proxmox_ip == proxmox_vm.ipv6:
+                    primary_ipv6 = netbox_ip
+
+            ip_patch = prepare_primary_ip_patch(primary_ipv4, primary_ipv6)
+            netbox_vm.update(ip_patch)

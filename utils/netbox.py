@@ -1,4 +1,4 @@
-from typing import Dict, Any
+from typing import Dict, Any, List
 
 import pynetbox
 from pynetbox.core.api import Api as NetboxAPI
@@ -11,7 +11,7 @@ import config
 from models.pve import ProxmoxVM, PveDisk, PveInterface as ProxmoxInterface
 
 
-def prepare_vm_data(hypervisor: NetboxDevice, pve_vm: ProxmoxVM):
+def prepare_vm_data(hypervisor: NetboxDevice, pve_vm: ProxmoxVM) -> dict[str, Any]:
     return {
         'name': pve_vm.name,
         'status': 'active',
@@ -35,7 +35,7 @@ def prepare_disk_data(netbox_vm: NetboxVM, proxmox_disk: PveDisk) -> Dict[str, A
     }
 
 
-def prepare_interface_data(netbox_vm: NetboxVM, proxmox_iface: ProxmoxInterface):
+def prepare_interface_data(netbox_vm: NetboxVM, proxmox_iface: ProxmoxInterface) -> Dict[str, Any]:
     return {
         'virtual_machine': netbox_vm.id,
         'name': proxmox_iface.name,
@@ -44,7 +44,7 @@ def prepare_interface_data(netbox_vm: NetboxVM, proxmox_iface: ProxmoxInterface)
     }
 
 
-def prepare_ip_data(netbox_iface: Record, proxmox_ip: str):
+def prepare_ip_data(netbox_iface: Record, proxmox_ip: str) -> Dict[str, Any]:
     return {
         'address': proxmox_ip,
         'assigned_object_type': 'virtualization.vminterface',
@@ -52,6 +52,11 @@ def prepare_ip_data(netbox_iface: Record, proxmox_ip: str):
         'status': 'active'
     }
 
+def prepare_primary_ip_patch(primary_ipv4: Record | None, primary_ipv6: Record | None) -> Dict[str, Any]:
+    return {
+        'primary_ipv4': primary_ipv4.id if primary_ipv4 else None,
+        'primary_ipv6': primary_ipv6.id if primary_ipv6 else None,
+    }
 
 def get_netbox_api() -> NetboxAPI:
-    return pynetbox.api(url=config.NB_HOST, token=config.NB_TOKEN)
+    return pynetbox.api(url=config.NETBOX_HOST, token=config.NETBOX_TOKEN)

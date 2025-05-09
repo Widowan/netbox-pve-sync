@@ -1,34 +1,21 @@
-from typing import List
+import json
+import re
+from datetime import datetime, timedelta
+from typing import List, Dict, Iterable, Any
+
+from proxmoxer import ProxmoxResource, ResourceException
+
+from config import INTERFACES_BLACKLIST
 
 
-class ProxmoxVM:
-    def __init__(self, node, summary, config, disks, ipv4, ipv6, osinfo, name, interfaces):
-        self.node = node
-        self.vmid = summary['vmid']
-        self.cpu = summary['cpus']
-        self.ram = summary['maxmem']
-        self.tags = map(lambda x: x.strip(), config.get('tags', []))
-        self.tags = list(filter(lambda x: x, self.tags))
-        self.uuid = config.get('vmgenid', None)
-        self.ipv4 = ipv4
-        self.ipv6 = ipv6
-        self.disks: List[PveDisk] = disks
-        self.osinfo = osinfo
-        self.name = name
-        self.interfaces = interfaces
-
-    def __str__(self):
-        disks = ';'.join(map(str, self.disks))
-        ram = int(self.ram / 1024 / 1024)
-        interfaces = ';'.join(map(str, self.interfaces))
-        return f'id={self.name}:{self.vmid}@{self.node},cpu={self.cpu},ram={ram}M,ipv4={self.ipv4},genid={self.uuid},disks=[{disks}],ifaces=[{interfaces}]'
+INTERFACES_COMMAND = ['/sbin/ip', '-json', 'addr']
+IP_TEMPLATE = "{}/{}"
 
 
 class PveDisk:
-    def __init__(self, identifier: str, vmid: int, size: int):
+    def __init__(self, *, identifier: str, vmid: int, size: int):
         self.id = identifier
         self.vmid = vmid
-        self.storage, self.name = self.id.split(':', 1)
         self.size = size
 
     def __str__(self):
@@ -37,12 +24,19 @@ class PveDisk:
 
 
 class PveInterface:
-    def __init__(self, name, ipv4_addresses, ipv6_addresses, mtu, mac):
-        self.name = name
-        self.ipv4_addresses = ipv4_addresses
-        self.ipv6_addresses = ipv6_addresses
-        self.mtu = mtu
-        self.mac = mac
+    def __init__(
+            self,
+            name: str,
+            mtu: int | None = None,
+            mac: str | None = None,
+            ipv4_addresses: List[str] = None,
+            ipv6_addresses: List[str] = None
+    ):
+        self.name: str = name
+        self.mtu: int | None = mtu
+        self.mac: str | None = mac
+        self.ipv4_addresses: List[str] = ipv4_addresses or []
+        self.ipv6_addresses: List[str] = ipv6_addresses or []
 
     def __str__(self):
         ipv4 = ','.join(self.ipv4_addresses)
@@ -51,12 +45,112 @@ class PveInterface:
 
 
 class OSInfo:
-    def __init__(self, os_id, pretty, name, version, version_id):
-        self.id = os_id,
-        self.pretty = pretty
-        self.name = name
-        self.version = version
-        self.version_id = version_id
+    def __init__(
+            self,
+            os_id:       str | None = None,
+            version_id:  str | None = None,
+            pretty_name: str | None = None,
+    ):
+        self.id          = os_id,
+        self.pretty_name = pretty_name
+        self.version_id  = version_id
 
     def __str__(self):
-        return f'{self.pretty}' or f'{self.name} {self.version or self.version_id}'
+        return f'{self.pretty_name}' or f'{self.id} {self.version_id}'
+
+
+class ProxmoxVM:
+    def __init__(self, summary: dict, config: dict, api: ProxmoxResource | None = None):
+        self.name: str = summary['name']
+        self.vmid: int = summary['vmid']
+        self.cpu:  int = summary['cpus']
+        self.ram:  int = summary['maxmem']
+        self.uuid: str = config['vmgenid']
+
+        self.api: ProxmoxResource = api.qemu(self.vmid)
+
+        self.node: str | None = None
+        self.ipv4: str | None = None
+        self.ipv6: str | None = None
+
+        self.os: OSInfo | None = None
+
+        self.disks:      List[PveDisk]      = []
+        self.interfaces: List[PveInterface] = []
+
+    def attach_node(self, node: str):
+        self.node = node
+
+
+    def attach_relevant_disks(self, all_disks: List[PveDisk]):
+        for disk in all_disks:
+            if disk.vmid == self.vmid:
+                if not any(filter(lambda x: x.id == disk.id, self.disks)):
+                    self.disks.append(disk)
+
+    def _execute_agent_command(self, command: List[str], timeout_ms: int = 1000) -> str | None:
+        try:
+            pid = self.api.agent('exec').create(command=command)['pid']
+        # guest-exec is not allowed most likely
+        except ResourceException:
+            return None
+
+        start_time = datetime.now()
+        while (datetime.now() - start_time) < timedelta(milliseconds=timeout_ms):
+            status: dict[str, Any] = self.api.agent('exec-status').get(pid=pid)
+            if status.get('exited') == 1:
+                return status.get('out-data')
+        return None
+
+    def attach_interfaces(self):
+        interfaces = self._execute_agent_command(INTERFACES_COMMAND) or '[]'
+        interfaces = json.loads(interfaces)
+
+        for interface in interfaces:
+            name = interface.get('ifname')
+            blacklist_hits = [re.fullmatch(pattern, name) for pattern in INTERFACES_BLACKLIST]
+            if not any(blacklist_hits):
+                mac_address = interface.get('address')
+                mtu = interface.get('mtu')
+                ipv4_addresses = []
+                ipv6_addresses = []
+                for address in interface.get('addr_info'):
+                    # Remove link-local addresses
+                    if address.get('scope') != 'local' and address.get('local') and address.get('prefixlen'):
+                        ip = IP_TEMPLATE.format(address['local'], address['prefixlen'])
+                        if address.get('family') == 'inet':
+                            ipv4_addresses.append(ip)
+                        elif address.get('family') == 'inet6':
+                            ipv4_addresses.append(ip)
+
+                interface = PveInterface(
+                    name=name,
+                    mac=mac_address,
+                    mtu=mtu,
+                    ipv4_addresses=ipv4_addresses,
+                    ipv6_addresses=ipv6_addresses
+                )
+
+                self.interfaces.append(interface)
+
+    def attach_os_info(self):
+        try:
+            os_release = self.api.agent('get-osinfo').get().get('result', {})
+            # os-release(5) recommends LIKE= as a fallback, but QGA doesn't expose that
+            os_id = os_release.get('id')
+            os_version_id = os_release.get('version-id')
+            os_pretty_name = os_release.get('pretty-name')
+            self.os = OSInfo(
+                os_id=os_id,
+                version_id=os_version_id,
+                pretty_name=os_pretty_name
+            )
+        except ResourceException:
+            self.os = None
+            return
+
+    def __str__(self):
+        disks = ';'.join(map(str, self.disks))
+        ram = int(self.ram / 1024 / 1024)
+        interfaces = ';'.join(map(str, self.interfaces))
+        return f'id={self.name}:{self.vmid}@{self.node},cpu={self.cpu},ram={ram}M,ipv4={self.ipv4},genid={self.uuid},disks=[{disks}],ifaces=[{interfaces}]'
