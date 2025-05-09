@@ -14,6 +14,8 @@ from utils.common import full_outer_join
 T = TypeVar('T')
 U = TypeVar('U')
 
+from concurrent.futures import ThreadPoolExecutor
+
 def upsert_pairs(
         netbox_entities: Iterable[T],
         proxmox_entities: Iterable[U],
@@ -24,9 +26,10 @@ def upsert_pairs(
     result = []
     entity_pairs = full_outer_join(netbox_entities, proxmox_entities, match_function)
 
-    for netbox_entity, proxmox_entity in entity_pairs:
+    def process_pair(netbox_entity: T, proxmox_entity: U) -> Tuple[T, U]:
         if proxmox_entity is None:
             netbox_entity.delete()
+            return netbox_entity, proxmox_entity
 
         netbox_entity_data = netbox_data_function(proxmox_entity)
 
@@ -35,7 +38,11 @@ def upsert_pairs(
         else:
             netbox_entity.update(netbox_entity_data)
 
-        result.append((netbox_entity, proxmox_entity))
+        return netbox_entity, proxmox_entity
+
+    with ThreadPoolExecutor() as executor:
+        result = list(executor.map(lambda pair: process_pair(*pair), entity_pairs))
+
     return result
 
 

@@ -55,13 +55,16 @@ def collect_vms(api: ProxmoxAPI, nodes: str | List[str]):
     for node in nodes:
         all_disks.extend(_collect_node_disks(api.nodes(node)))
 
+    def process_vm(vm, node):
+        vm.attach_node(node)
+        vm.attach_relevant_disks(all_disks)
+        vm.attach_interfaces()
+        vm.attach_os_info()
+
     for node in nodes:
         vms = _collect_node_vms(api.nodes(node))
-        for vm in vms:
-            vm.attach_node(node)
-            vm.attach_relevant_disks(all_disks)
-            vm.attach_interfaces()
-            vm.attach_os_info()
+        with ThreadPoolExecutor() as executor:
+            executor.map(lambda vm: process_vm(vm, node), vms)
         result.extend(vms)
 
     return result
