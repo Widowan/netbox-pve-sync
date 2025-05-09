@@ -6,15 +6,18 @@ from pynetbox.core.response import Record as NetboxRecord, RecordSet as NetboxRe
 from pynetbox.models.virtualization import VirtualMachines as NetboxVM
 
 import config
+from config import EXTERNAL_FIELD_SLUG
 from utils.netbox import prepare_interface_data, prepare_ip_data, prepare_vm_data, prepare_disk_data, \
     prepare_primary_ip_patch
 from models.pve import ProxmoxVM
 from utils.common import full_outer_join
 
+from concurrent.futures import ThreadPoolExecutor
+
+EXTERNAL = {EXTERNAL_FIELD_SLUG: True}
+
 T = TypeVar('T')
 U = TypeVar('U')
-
-from concurrent.futures import ThreadPoolExecutor
 
 def upsert_pairs(
         netbox_entities: Iterable[T],
@@ -51,7 +54,8 @@ def sync_vms(api: NetboxAPI, pve_vms: List[ProxmoxVM], pve_nodes: List[str]) -> 
     netbox_hypervisors = [api.dcim.devices.get(name=i, type=config.HYPERVISOR_DEVICE_TYPE) for i in pve_nodes]
 
     for hypervisor in netbox_hypervisors:
-        netbox_vms: Iterable[NetboxVM] = api.virtualization.virtual_machines.filter(device_id=hypervisor.id)
+        netbox_vms: Iterable[NetboxVM] = api.virtualization.virtual_machines.filter(
+            device_id=hypervisor.id, custom_fields=EXTERNAL)
         pairs = upsert_pairs(
             netbox_entities=netbox_vms,
             proxmox_entities=pve_vms,
@@ -66,7 +70,8 @@ def sync_vms(api: NetboxAPI, pve_vms: List[ProxmoxVM], pve_nodes: List[str]) -> 
 
 def sync_disks(api: NetboxAPI, vm_pair_list: List[Tuple[NetboxVM, ProxmoxVM]]):
     for netbox_vm, proxmox_vm in vm_pair_list:
-        netbox_disks: Iterable[NetboxRecord] = api.virtualization.virtual_disks.filter(virtual_machine_id=netbox_vm.id)
+        netbox_disks: Iterable[NetboxRecord] = api.virtualization.virtual_disks.filter(
+            virtual_machine_id=netbox_vm.id, custom_fields=EXTERNAL)
         upsert_pairs(
             netbox_entities=netbox_disks,
             proxmox_entities=proxmox_vm.disks,
@@ -78,7 +83,8 @@ def sync_disks(api: NetboxAPI, vm_pair_list: List[Tuple[NetboxVM, ProxmoxVM]]):
 
 def sync_interfaces(api: NetboxAPI, vm_pair_list: List[Tuple[NetboxVM, ProxmoxVM]]):
     for netbox_vm, proxmox_vm in vm_pair_list:
-        netbox_interfaces: Iterable[NetboxRecord] = api.virtualization.interfaces.filter(virtual_machine_id=netbox_vm.id)
+        netbox_interfaces: Iterable[NetboxRecord] = api.virtualization.interfaces.filter(
+            virtual_machine_id=netbox_vm.id, custom_fields=EXTERNAL)
         interface_pairs = upsert_pairs(
             netbox_entities=netbox_interfaces,
             proxmox_entities=proxmox_vm.interfaces,
@@ -89,7 +95,8 @@ def sync_interfaces(api: NetboxAPI, vm_pair_list: List[Tuple[NetboxVM, ProxmoxVM
 
         for netbox_interface, proxmox_interface in interface_pairs:
             all_proxmox_ips = proxmox_interface.ipv4_addresses + proxmox_interface.ipv6_addresses
-            netbox_ips: NetboxRecordSet = api.ipam.ip_addresses.filter(address=all_proxmox_ips)
+            netbox_ips: NetboxRecordSet = api.ipam.ip_addresses.filter(
+                address=all_proxmox_ips, custom_fields=EXTERNAL)
             ip_pairs: List[Tuple[NetboxRecord, str]] = upsert_pairs(
                 netbox_entities=netbox_ips,
                 proxmox_entities=all_proxmox_ips,

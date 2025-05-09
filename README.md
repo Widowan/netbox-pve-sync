@@ -23,6 +23,8 @@ This script will sync VMs from all of your proxmox nodes to Netbox.
 - iptools2 on guest OS with json support (you should be fine unless you run ancient OS version like CentOS 7)
 - Python3.10 (I think) or higher **on the OS running this script**
 - Users for API in both Netbox and Proxmox
+- Custom field `vmid` for Virtual Machines of type `int`
+- Custom field `external` for VMs, Interfaces, Disks and IP-Addresses of type `bool` (default false)
 
 #### Rationale about qemu guest agent:
 

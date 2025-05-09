@@ -25,23 +25,26 @@ class PveDisk:
 
 class PveInterface:
     def __init__(
-            self,
+            self, *,
             name: str,
             mtu: int | None = None,
             mac: str | None = None,
             ipv4_addresses: List[str] = None,
-            ipv6_addresses: List[str] = None
+            ipv6_addresses: List[str] = None,
+            state: bool = True
     ):
         self.name: str = name
         self.mtu: int | None = mtu
         self.mac: str | None = mac
         self.ipv4_addresses: List[str] = ipv4_addresses or []
         self.ipv6_addresses: List[str] = ipv6_addresses or []
+        self.state = state
 
     def __str__(self):
         ipv4 = ','.join(self.ipv4_addresses)
         ipv6 = ','.join(self.ipv6_addresses)
-        return f'name={self.name};mtu={self.mtu};ipv4={ipv4};ipv6={ipv6}'
+        state = 'Up' if self.state else 'Down'
+        return f'name={self.name};state={state};mtu={self.mtu};ipv4={ipv4};ipv6={ipv6}'
 
 
 class OSInfo:
@@ -110,6 +113,7 @@ class ProxmoxVM:
             name = interface.get('ifname')
             blacklist_hits = [re.fullmatch(pattern, name) for pattern in INTERFACES_BLACKLIST]
             if not any(blacklist_hits):
+                state = interface.get('operstate') == 'UP'
                 mac_address = interface.get('address')
                 mtu = interface.get('mtu')
                 ipv4_addresses = []
@@ -128,7 +132,8 @@ class ProxmoxVM:
                     mac=mac_address,
                     mtu=mtu,
                     ipv4_addresses=ipv4_addresses,
-                    ipv6_addresses=ipv6_addresses
+                    ipv6_addresses=ipv6_addresses,
+                    state=state
                 )
 
                 self.interfaces.append(interface)

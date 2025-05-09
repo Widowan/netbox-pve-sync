@@ -1,13 +1,10 @@
-import json
-import re
 from concurrent.futures import ThreadPoolExecutor
 from typing import List
 
-from proxmoxer import ProxmoxAPI, ProxmoxResource, ResourceException
+from proxmoxer import ProxmoxAPI, ProxmoxResource
 
 import utils.proxmox
-from models.pve import ProxmoxVM, PveDisk, PveInterface, OSInfo, ProxmoxVM
-from utils.proxmox import execute_vm_agent_command
+from models.pve import PveDisk, ProxmoxVM
 
 
 def _collect_node_disks(api: ProxmoxResource) -> List[PveDisk]:
@@ -55,8 +52,8 @@ def collect_vms(api: ProxmoxAPI, nodes: str | List[str]):
     for node in nodes:
         all_disks.extend(_collect_node_disks(api.nodes(node)))
 
-    def process_vm(vm, node):
-        vm.attach_node(node)
+    def process_vm(vm, _node):
+        vm.attach_node(_node)
         vm.attach_relevant_disks(all_disks)
         vm.attach_interfaces()
         vm.attach_os_info()

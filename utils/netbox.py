@@ -8,6 +8,7 @@ from pynetbox.models.dcim import Devices as NetboxDevice
 from pynetbox.models.virtualization import VirtualMachines as NetboxVM
 
 import config
+from config import EXTERNAL_FIELD_SLUG
 from models.pve import ProxmoxVM, PveDisk, PveInterface as ProxmoxInterface
 
 
@@ -23,6 +24,7 @@ def prepare_vm_data(hypervisor: NetboxDevice, pve_vm: ProxmoxVM) -> dict[str, An
         'memory': pve_vm.ram // (1024 ** 2),
         'custom_fields': {
             'vmid': pve_vm.vmid,
+            EXTERNAL_FIELD_SLUG: True,
         },
     }
 
@@ -31,7 +33,10 @@ def prepare_disk_data(netbox_vm: NetboxVM, proxmox_disk: PveDisk) -> Dict[str, A
     return {
         'virtual_machine': netbox_vm.id,
         'name': proxmox_disk.id,
-        'size': proxmox_disk.size // (1024 ** 2)
+        'size': proxmox_disk.size // (1024 ** 2),
+        'custom_fields': {
+            EXTERNAL_FIELD_SLUG: True
+        }
     }
 
 
@@ -40,7 +45,11 @@ def prepare_interface_data(netbox_vm: NetboxVM, proxmox_iface: ProxmoxInterface)
         'virtual_machine': netbox_vm.id,
         'name': proxmox_iface.name,
         'mtu': proxmox_iface.mtu,
-        'primary_mac_address': proxmox_iface.mac
+        'primary_mac_address': proxmox_iface.mac,
+        'enabled': proxmox_iface.state,
+        'custom_fields': {
+            EXTERNAL_FIELD_SLUG: True
+        }
     }
 
 
@@ -49,7 +58,10 @@ def prepare_ip_data(netbox_iface: Record, proxmox_ip: str) -> Dict[str, Any]:
         'address': proxmox_ip,
         'assigned_object_type': 'virtualization.vminterface',
         'assigned_object_id': netbox_iface.id,
-        'status': 'active'
+        'status': 'active',
+        'custom_fields': {
+            EXTERNAL_FIELD_SLUG: True
+        }
     }
 
 def prepare_primary_ip_patch(primary_ipv4: Record | None, primary_ipv6: Record | None) -> Dict[str, Any]:
