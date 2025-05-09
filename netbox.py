@@ -7,8 +7,7 @@ from pynetbox.models.virtualization import VirtualMachines as NetboxVM
 
 import config
 from config import EXTERNAL_FIELD_SLUG
-from utils.netbox import prepare_interface_data, prepare_ip_data, prepare_vm_data, prepare_disk_data, \
-    prepare_primary_ip_patch
+from utils.netbox import prepare_interface_data, prepare_ip_data, prepare_vm_data, prepare_disk_data
 from models.pve import ProxmoxVM
 from utils.common import full_outer_join
 
@@ -109,10 +108,11 @@ def sync_interfaces(api: NetboxAPI, vm_pair_list: List[Tuple[NetboxVM, ProxmoxVM
 
             primary_ipv4, primary_ipv6 = None, None
             for netbox_ip, proxmox_ip in ip_pairs:
-                if proxmox_ip == proxmox_vm.ipv4:
+                if netbox_ip.address == proxmox_vm.ipv4:
                     primary_ipv4 = netbox_ip
-                elif proxmox_ip == proxmox_vm.ipv6:
+                elif netbox_ip.address == proxmox_vm.ipv6:
                     primary_ipv6 = netbox_ip
 
-            ip_patch = prepare_primary_ip_patch(primary_ipv4, primary_ipv6)
-            netbox_vm.update(ip_patch)
+            netbox_vm.primary_ip4 = primary_ipv4
+            netbox_vm.primary_ip6 = primary_ipv6
+            netbox_vm.save()

@@ -8,7 +8,7 @@ from pynetbox.models.dcim import Devices as NetboxDevice
 from pynetbox.models.virtualization import VirtualMachines as NetboxVM
 
 import config
-from config import EXTERNAL_FIELD_SLUG
+from config import EXTERNAL_FIELD_SLUG, DISK_SIZE_UNIT
 from models.pve import ProxmoxVM, PveDisk, PveInterface as ProxmoxInterface
 
 
@@ -33,7 +33,7 @@ def prepare_disk_data(netbox_vm: NetboxVM, proxmox_disk: PveDisk) -> Dict[str, A
     return {
         'virtual_machine': netbox_vm.id,
         'name': proxmox_disk.id,
-        'size': proxmox_disk.size // (1024 ** 2),
+        'size': proxmox_disk.size // (DISK_SIZE_UNIT ** 2),
         'custom_fields': {
             EXTERNAL_FIELD_SLUG: True
         }
@@ -62,12 +62,6 @@ def prepare_ip_data(netbox_iface: Record, proxmox_ip: str) -> Dict[str, Any]:
         'custom_fields': {
             EXTERNAL_FIELD_SLUG: True
         }
-    }
-
-def prepare_primary_ip_patch(primary_ipv4: Record | None, primary_ipv6: Record | None) -> Dict[str, Any]:
-    return {
-        'primary_ipv4': primary_ipv4.id if primary_ipv4 else None,
-        'primary_ipv6': primary_ipv6.id if primary_ipv6 else None,
     }
 
 def get_netbox_api() -> NetboxAPI:

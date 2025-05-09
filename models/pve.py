@@ -1,7 +1,7 @@
 import json
 import re
 from datetime import datetime, timedelta
-from typing import List, Any
+from typing import List, Any, Dict
 
 from proxmoxer import ProxmoxResource, ResourceException
 
@@ -9,6 +9,8 @@ from config import INTERFACES_BLACKLIST
 
 
 INTERFACES_COMMAND = ['/sbin/ip', '-json', 'addr']
+ROUTE4_COMMAND = ['/sbin/ip', '-json', 'route', 'get', '8.8.8.8']
+ROUTE6_COMMAND = ['/sbin/ip', '-json', 'route', 'get', '2001:4860:4860::8888']
 IP_TEMPLATE = "{}/{}"
 
 
@@ -19,7 +21,7 @@ class PveDisk:
         self.size = size
 
     def __str__(self):
-        size = int(self.size / 1024 / 1024)
+        size = int(self.size / 1000**2)
         return f'id={self.id}@{self.vmid}:size={size}M'
 
 
@@ -91,6 +93,7 @@ class ProxmoxVM:
                 if not any(filter(lambda x: x.id == disk.id, self.disks)):
                     self.disks.append(disk)
 
+
     def _execute_agent_command(self, command: List[str], timeout_ms: int = 1000) -> str | None:
         try:
             pid = self.api.agent('exec').create(command=command)['pid']
@@ -104,6 +107,7 @@ class ProxmoxVM:
             if status.get('exited') == 1:
                 return status.get('out-data')
         return None
+
 
     def attach_interfaces(self):
         interfaces = self._execute_agent_command(INTERFACES_COMMAND) or '[]'
@@ -137,6 +141,20 @@ class ProxmoxVM:
                 )
 
                 self.interfaces.append(interface)
+
+    def attach_primary_ips(self):
+        def _get_primary(default_route: Dict[str, str]) -> str:
+            for interface in self.interfaces:
+                if interface.name == default_route.get('dev'):
+                    src = default_route.get('prefsrc')
+                    for address in interface.ipv4_addresses + interface.ipv6_addresses:
+                        if f'{src}/' in address:
+                            return address
+
+        default_route_ipv4 = json.loads(self._execute_agent_command(ROUTE4_COMMAND) or '[{}]')[0]
+        self.ipv4 = _get_primary(default_route_ipv4)
+        default_route_ipv6 = json.loads(self._execute_agent_command(ROUTE6_COMMAND) or '[{}]')[0]
+        self.ipv6 = _get_primary(default_route_ipv6)
 
     def attach_os_info(self):
         try:

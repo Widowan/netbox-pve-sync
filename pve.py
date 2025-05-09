@@ -56,6 +56,7 @@ def collect_vms(api: ProxmoxAPI, nodes: str | List[str]):
         vm.attach_node(_node)
         vm.attach_relevant_disks(all_disks)
         vm.attach_interfaces()
+        vm.attach_primary_ips()
         vm.attach_os_info()
 
     for node in nodes:
